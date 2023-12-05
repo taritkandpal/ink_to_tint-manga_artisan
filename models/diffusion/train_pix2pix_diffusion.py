@@ -88,8 +88,8 @@ def parse_args():
         type=str,
         # default=None,
         # default=os.path.join(PRETRAINED_MODELS, DIFFUSION_MODEL),
-        # default="runwayml/stable-diffusion-v1-5",
-        default="Meina/MeinaMix_V10",
+        default="runwayml/stable-diffusion-v1-5",
+        # default="Meina/MeinaMix_V10",
         # required=True,
         help="Path to pretrained model or model identifier from huggingface.co/models.",
     )
@@ -1176,10 +1176,10 @@ def main():
                     str(accelerator.device),
                     enabled=accelerator.mixed_precision == "fp16",
                 ):
-                    for original_image, validation_prompt in tqdm.tqdm(val_data, desc="Validation"):
+                    cnt = 0
+                    for original_image, validation_prompt in tqdm(val_data, desc="Validation"):
                         # for _ in range(args.num_validation_images):
-                        edited_images.append(
-                            pipeline(
+                        image = pipeline(
                                 validation_prompt,  # args.validation_prompt,
                                 image=original_image,
                                 num_inference_steps=DIFFUSION_NUM_INFERENCE_STEPS,
@@ -1187,10 +1187,8 @@ def main():
                                 guidance_scale=7,
                                 generator=generator,
                             ).images[0]
-                        )
-                for cnt, image in enumerate(edited_images):
-                    image.save(os.path.join(args.output_dir, f"{cnt}.png"))
-
+                        edited_images.append(image)
+                        image.save(os.path.join(args.output_dir, f"{cnt}.png"))
                 for tracker in accelerator.trackers:
                     if tracker.name == "wandb":
                         wandb_table = wandb.Table(columns=WANDB_TABLE_COL_NAMES)
