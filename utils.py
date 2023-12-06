@@ -12,7 +12,7 @@ import fitz
 import numpy as np
 from tqdm import tqdm
 
-from ink_to_tint_manga_artisan.config import *
+from config import *
 
 
 def ldict_to_jsonl(ldict, file_path):
