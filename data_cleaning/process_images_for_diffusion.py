@@ -1,8 +1,7 @@
-from pathlib import Path
 import os
+from pathlib import Path
 import random
 
-from skimage import io
 from tqdm import tqdm
 
 from utils import ldict_to_jsonl
@@ -49,16 +48,24 @@ for edited_class in classes:
         data["edited_image"] = fname
         data["edited_class"] = edited_class
         data["edit_prompt"] = (
-            f"Convert the given manga to {edited_class} art style without altering "
-            f"the story and the characters of the input."
+            f"Convert the given manga page to {edited_class} art style without altering "
+            f"the story and the text."
         )
-        original_fname, original_class = find_orig_from_pool(original_pool, edited_class)
+        original_fname, original_class = find_orig_from_pool(
+            original_pool, edited_class
+        )
         if original_fname != "Failed" and original_class != "Failed":
             data["input_image"] = original_fname
             data["input_class"] = original_class
+            data["file_name"] = original_fname
             ldict.append(data)
         else:
             failed.append(data)
+
 random.shuffle(ldict)
-print(len(ldict))
-print(len(failed))
+train_size = len(ldict) - DIFFUSION_TEST_SIZE
+train = ldict[:train_size]
+test = ldict[train_size:]
+ldict_to_jsonl(train, training_op_folder / "train" / "metadata.jsonl")
+ldict_to_jsonl(test, training_op_folder / "test" / "metadata.jsonl")
+print("Done")

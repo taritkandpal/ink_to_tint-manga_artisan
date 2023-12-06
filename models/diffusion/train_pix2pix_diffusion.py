@@ -58,6 +58,7 @@ from diffusers.utils import check_min_version, deprecate, is_wandb_available
 from diffusers.utils.import_utils import is_xformers_available
 
 from config import *
+from utils import pad_image
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.15.0.dev0")
@@ -212,7 +213,7 @@ def parse_args():
         "--resolution",
         type=int,
         # default=256,
-        default=DIFFUSION_IMAGE_SHAPE,
+        default=DIFFUSION_IMAGE_SIZE,
         help=(
             "The resolution for input images, all the images in the train/validation dataset will be resized to this"
             " resolution"
@@ -485,7 +486,7 @@ def download_image(url):
     return image
 
 
-def validation_fetch_data(args):
+def validation_fetch_data(args, train_transforms):
     metadata_fp = os.path.join(args.val_data_dir, "metadata.jsonl")
     with open(metadata_fp, "r") as fh:
         metadata = [json.loads(jline) for jline in fh.read().splitlines()]
@@ -496,6 +497,7 @@ def validation_fetch_data(args):
         prompt = ddict[args.edit_prompt_column]
         im_fp = ddict[args.original_image_column]
         image = Image.open(os.path.join(args.val_data_dir, im_fp)).convert("RGB")
+        image = train_transforms(image)
         val_data.append((image, prompt))
     return val_data
 
@@ -799,12 +801,25 @@ def main():
     # Preprocessing the datasets.
     train_transforms = transforms.Compose(
         [
-            transforms.CenterCrop(args.resolution)
-            if args.center_crop
-            else transforms.RandomCrop(args.resolution),
-            transforms.RandomHorizontalFlip()
-            if args.random_flip
-            else transforms.Lambda(lambda x: x),
+            # transforms.CenterCrop(args.resolution)
+            # if args.center_crop
+            # else transforms.RandomCrop(args.resolution),
+            # transforms.RandomHorizontalFlip()
+            # if args.random_flip
+            # else transforms.Lambda(lambda x: x),
+            transforms.Lambda(
+                lambda x: pad_image(
+                    x,
+                    output_size=(DIFFUSION_INPUT_SIZE, DIFFUSION_INPUT_SIZE, 3),
+                    ip_type="PIL",
+                )
+            ),
+            transforms.Resize(
+                DIFFUSION_IMAGE_SIZE, transforms.InterpolationMode.BILINEAR
+            ),
+            transforms.Lambda(
+                lambda x: 2 * (x / 255) - 1
+            )
         ]
     )
 
@@ -843,7 +858,7 @@ def main():
         # augmentation transforms.
         images = np.concatenate([original_images, edited_images])
         images = torch.tensor(images)
-        images = 2 * (images / 255) - 1
+        # images = 2 * (images / 255) - 1
         return train_transforms(images)
 
     def preprocess_train(examples):
@@ -1170,23 +1185,25 @@ def main():
 
                 # run inference
                 # original_image = download_image(args.val_image_url)
-                val_data = validation_fetch_data(args)
+                val_data = validation_fetch_data(args, train_transforms)
                 edited_images = []
                 with torch.autocast(
                     str(accelerator.device),
                     enabled=accelerator.mixed_precision == "fp16",
                 ):
                     cnt = 0
-                    for original_image, validation_prompt in tqdm(val_data, desc="Validation"):
+                    for original_image, validation_prompt in tqdm(
+                        val_data, desc="Validation"
+                    ):
                         # for _ in range(args.num_validation_images):
                         image = pipeline(
-                                validation_prompt,  # args.validation_prompt,
-                                image=original_image,
-                                num_inference_steps=DIFFUSION_NUM_INFERENCE_STEPS,
-                                image_guidance_scale=1.5,
-                                guidance_scale=7,
-                                generator=generator,
-                            ).images[0]
+                            validation_prompt,  # args.validation_prompt,
+                            image=original_image,
+                            num_inference_steps=DIFFUSION_NUM_INFERENCE_STEPS,
+                            image_guidance_scale=1.5,
+                            guidance_scale=7,
+                            generator=generator,
+                        ).images[0]
                         edited_images.append(image)
                         image.save(os.path.join(args.output_dir, f"{cnt}.png"))
                 for tracker in accelerator.trackers:
@@ -1212,7 +1229,6 @@ def main():
         unet = accelerator.unwrap_model(unet)
         if args.use_ema:
             ema_unet.copy_to(unet.parameters())
-
         pipeline = StableDiffusionInstructPix2PixPipeline.from_pretrained(
             args.pretrained_model_name_or_path,
             text_encoder=accelerator.unwrap_model(text_encoder),
