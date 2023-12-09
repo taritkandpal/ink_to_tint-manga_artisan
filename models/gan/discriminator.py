@@ -1,8 +1,15 @@
+"""
+Class definitions for GAN Discriminator.
+"""
 import torch
 import torch.nn as nn
 
 
 class CNNBlock(nn.Module):
+    """
+    Convolution block for Discriminator.
+    """
+
     def __init__(self, in_channels, out_channels, stride=2):
         super(CNNBlock, self).__init__()
         self.conv = nn.Sequential(
@@ -24,26 +31,27 @@ class CNNBlock(nn.Module):
 
 
 class Discriminator(nn.Module):
+    """
+    Discriminator for GAN.
+    """
+
     def __init__(self, in_channels=4, features=[32, 64, 96, 128, 192, 256, 384, 512]):
-        super(
-            Discriminator, self
-        ).__init__()  # calls the base class of nn.Module to use its internal structures
+        super(Discriminator, self).__init__()
+
+        # list to append convolution blocks
+        layers = []
 
         # initial layer is defined without batch normalization (since the input image is already normalized)
-        self.initial = nn.Sequential(
+        initial = nn.Sequential(
             nn.Conv2d(in_channels, features[0], kernel_size=4, stride=2, padding=1),
             nn.LeakyReLU(0.2, inplace=True),
         )
+        layers.append(initial)
 
-        layers = []  # list to append convolution layers
-
+        # intermediate layers
         in_channels = features[0]
         for feature in features[1:]:
-            layers.append(
-                CNNBlock(
-                    in_channels, feature, stride=2  # if feature != features[-1] else 1
-                )
-            )
+            layers.append(CNNBlock(in_channels, feature, stride=2))
             in_channels = feature
 
         # last output layer
@@ -53,13 +61,15 @@ class Discriminator(nn.Module):
         self.model = nn.Sequential(*layers)
 
     def forward(self, bw_image, color_image):
+        """
+        Discriminator forward pass.
+        """
         combined = torch.cat([bw_image, color_image], dim=1)
-        combined = self.initial(combined)
         combined = self.model(combined)
         return combined
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     dis = Discriminator()
     op = dis(torch.randn(2, 1, 512, 512), torch.randn(2, 3, 512, 512))
     print(op.shape)
