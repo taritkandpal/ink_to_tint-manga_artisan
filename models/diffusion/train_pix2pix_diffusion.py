@@ -18,19 +18,15 @@
 
 import logging
 import math
-from typing import Optional
 import json
 import warnings
 
 warnings.filterwarnings("ignore")
 
-import accelerate
 import datasets
 import numpy as np
 import matplotlib.pyplot as plt
-import PIL
 from PIL import Image
-import requests
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.checkpoint
@@ -39,8 +35,6 @@ from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration, set_seed
 from datasets import load_dataset
-from huggingface_hub import HfFolder, whoami
-from packaging import version
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
@@ -59,24 +53,75 @@ from utils import pad_image_diffusion, pad_image, resize_image
 logger = get_logger(__name__, log_level="INFO")
 
 
-def get_full_repo_name(
-    model_id: str, organization: Optional[str] = None, token: Optional[str] = None
-):
-    if token is None:
-        token = HfFolder.get_token()
-    if organization is None:
-        username = whoami(token)["name"]
-        return f"{username}/{model_id}"
-    else:
-        return f"{organization}/{model_id}"
-
-
 def convert_to_np(image, resolution):
+    """
+    Helper func for preprocessing images. Converts images to RGB and resizes them.
+    """
     image = image.convert("RGB").resize((resolution, resolution))
     return np.array(image).transpose(2, 0, 1)
 
 
+def preprocess_images(
+    examples, train_transforms, original_image_column, edited_image_column
+):
+    """
+    Preprocess images for training dataset.
+    """
+    # read and process input image
+    original_images = np.concatenate(
+        [
+            convert_to_np(
+                Image.open(os.path.join(DIFFUSION_POOL_DATA, image)),
+                DIFFUSION_IMAGE_SIZE,
+            )
+            for image in examples[original_image_column]
+        ]
+    )
+    # read and process target image
+    edited_images = np.concatenate(
+        [
+            convert_to_np(
+                Image.open(os.path.join(DIFFUSION_POOL_DATA, image)),
+                DIFFUSION_IMAGE_SIZE,
+            )
+            for image in examples[edited_image_column]
+        ]
+    )
+    # We need to ensure that the input and the target images undergo the same augmentation transforms.
+    images = np.concatenate([original_images, edited_images])
+    images = torch.tensor(images)
+    return train_transforms(images)
+
+
+def collate_fn(examples):
+    """
+    Collate Function for Dataloader.
+    """
+    original_pixel_values = torch.stack(
+        [example["original_pixel_values"] for example in examples]
+    )
+    original_pixel_values = original_pixel_values.to(
+        memory_format=torch.contiguous_format
+    ).float()
+    edited_pixel_values = torch.stack(
+        [example["edited_pixel_values"] for example in examples]
+    )
+    edited_pixel_values = edited_pixel_values.to(
+        memory_format=torch.contiguous_format
+    ).float()
+    input_ids = torch.stack([example["input_ids"] for example in examples])
+    return {
+        "original_pixel_values": original_pixel_values,
+        "edited_pixel_values": edited_pixel_values,
+        "input_ids": input_ids,
+    }
+
+
 def validation_fetch_data():
+    """
+    Function to preprocess and fetch data for validation.
+    """
+    # read and iterate metadata file
     metadata_fp = os.path.join(DIFFUSION_VAL_DATA, "metadata.jsonl")
     with open(metadata_fp, "r") as fh:
         metadata = [json.loads(jline) for jline in fh.read().splitlines()]
@@ -88,6 +133,7 @@ def validation_fetch_data():
         im_fp = ddict[DIFFUSION_ORIGINAL_IMAGE_COL]
         image = Image.open(os.path.join(DIFFUSION_VAL_DATA, im_fp)).convert("RGB")
         image = np.array(image)
+        # resize and pad image
         image = resize_image(image)
         image = pad_image(image, (DIFFUSION_IMAGE_SIZE, DIFFUSION_IMAGE_SIZE, 3))
         image = Image.fromarray(image)
@@ -96,6 +142,9 @@ def validation_fetch_data():
 
 
 def main():
+    """
+    Main function for training stable diffusion.
+    """
     diffusion_train_epochs = DIFFUSION_TRAIN_EPOCHS
 
     logging_dir = os.path.join(DIFFUSION_OUTPUT_DIR, "logs")
@@ -192,12 +241,18 @@ def main():
 
     # create custom saving & loading hooks so that `accelerator.save_state(...)` serializes in a nice format
     def save_model_hook(models, weights, output_dir):
+        """
+        Custom saving hook.
+        """
         for i, model in enumerate(models):
             model.save_pretrained(os.path.join(output_dir, "unet"))
             # make sure to pop weight so that corresponding model is not saved again
             weights.pop()
 
     def load_model_hook(models, input_dir):
+        """
+        Custom loading hook.
+        """
         for i in range(len(models)):
             # pop models so that they are not loaded again
             model = models.pop()
@@ -238,17 +293,17 @@ def main():
     original_image_column = DIFFUSION_ORIGINAL_IMAGE_COL
     if original_image_column not in column_names:
         raise ValueError(
-            f"--original_image_column' value '{DIFFUSION_ORIGINAL_IMAGE_COL}' needs to be one of: {', '.join(column_names)}"
+            f"original_image_column' value '{DIFFUSION_ORIGINAL_IMAGE_COL}' needs to be one of: {', '.join(column_names)}"
         )
     edit_prompt_column = DIFFUSION_EDIT_PROMPT_COL
     if edit_prompt_column not in column_names:
         raise ValueError(
-            f"--edit_prompt_column' value '{DIFFUSION_EDIT_PROMPT_COL}' needs to be one of: {', '.join(column_names)}"
+            f"edit_prompt_column' value '{DIFFUSION_EDIT_PROMPT_COL}' needs to be one of: {', '.join(column_names)}"
         )
     edited_image_column = DIFFUSION_EDITED_IMAGE_COL
     if edited_image_column not in column_names:
         raise ValueError(
-            f"--edited_image_column' value '{DIFFUSION_EDITED_IMAGE_COL}' needs to be one of: {', '.join(column_names)}"
+            f"edited_image_column' value '{DIFFUSION_EDITED_IMAGE_COL}' needs to be one of: {', '.join(column_names)}"
         )
 
     # Preprocessing the datasets.
@@ -281,34 +336,14 @@ def main():
         ]
     )
 
-    def preprocess_images(examples):
-        original_images = np.concatenate(
-            [
-                convert_to_np(
-                    Image.open(os.path.join(DIFFUSION_POOL_DATA, image)),
-                    DIFFUSION_IMAGE_SIZE,
-                )
-                for image in examples[original_image_column]
-            ]
-        )
-        edited_images = np.concatenate(
-            [
-                convert_to_np(
-                    Image.open(os.path.join(DIFFUSION_POOL_DATA, image)),
-                    DIFFUSION_IMAGE_SIZE,
-                )
-                for image in examples[edited_image_column]
-            ]
-        )
-        # We need to ensure that the original and the edited images undergo the same
-        # augmentation transforms.
-        images = np.concatenate([original_images, edited_images])
-        images = torch.tensor(images)
-        return train_transforms(images)
-
     def preprocess_train(examples):
+        """
+        Prepare training dataset.
+        """
         # Preprocess images.
-        preprocessed_images = preprocess_images(examples)
+        preprocessed_images = preprocess_images(
+            examples, train_transforms, original_image_column, edited_image_column
+        )
         # Since the original and edited images were concatenated before
         # applying the transformations, we need to separate them and reshape
         # them accordingly.
@@ -330,6 +365,7 @@ def main():
         return examples
 
     with accelerator.main_process_first():
+        # truncate train samples if configured
         if DIFFUSION_MAX_TRAIN_SAMPLES is not None:
             dataset["train"] = (
                 dataset["train"]
@@ -338,26 +374,6 @@ def main():
             )
         # Set the training transforms
         train_dataset = dataset["train"].with_transform(preprocess_train)
-
-    def collate_fn(examples):
-        original_pixel_values = torch.stack(
-            [example["original_pixel_values"] for example in examples]
-        )
-        original_pixel_values = original_pixel_values.to(
-            memory_format=torch.contiguous_format
-        ).float()
-        edited_pixel_values = torch.stack(
-            [example["edited_pixel_values"] for example in examples]
-        )
-        edited_pixel_values = edited_pixel_values.to(
-            memory_format=torch.contiguous_format
-        ).float()
-        input_ids = torch.stack([example["input_ids"] for example in examples])
-        return {
-            "original_pixel_values": original_pixel_values,
-            "edited_pixel_values": edited_pixel_values,
-            "input_ids": input_ids,
-        }
 
     # DataLoaders creation:
     train_dataloader = torch.utils.data.DataLoader(
@@ -374,6 +390,7 @@ def main():
     )
     max_train_steps = diffusion_train_epochs * num_update_steps_per_epoch
 
+    # Learning Rate Scheduler
     lr_scheduler = get_scheduler(
         DIFFUSION_LR_SCHEDULER,
         optimizer=optimizer,
@@ -531,6 +548,7 @@ def main():
                 if global_step >= max_train_steps:
                     break
 
+            # plot loss curve and lr curve
             os.makedirs(DIFFUSION_VALIDATION_OUTPUT_DIR, exist_ok=True)
             plt.plot(list(range(len(step_losses))), step_losses)
             plt.title("Train Loss")
@@ -549,8 +567,24 @@ def main():
             plt.cla()
             plt.clf()
 
+            # Create the pipeline using the trained modules and save it.
+            accelerator.wait_for_everyone()
+            if accelerator.is_main_process:
+                unet = accelerator.unwrap_model(unet)
+                pipeline = StableDiffusionInstructPix2PixPipeline.from_pretrained(
+                    DIFFUSION_MODEL,
+                    text_encoder=accelerator.unwrap_model(text_encoder),
+                    vae=accelerator.unwrap_model(vae),
+                    unet=unet,
+                    revision=DIFFUSION_MODEL_REVISION,
+                    safety_checker=None,
+                    requires_safety_checker=False,
+                )
+                pipeline.save_pretrained(DIFFUSION_OUTPUT_DIR)
+
         if accelerator.is_main_process:
             if epoch % DIFFUSION_VAL_EPOCHS == 0:
+                # Run generation on validation data
                 logger.info(
                     f"Running validation. Generating {DIFFUSION_NUM_VAL_IMAGES} images."
                 )
@@ -594,22 +628,6 @@ def main():
 
                 del pipeline
                 torch.cuda.empty_cache()
-
-    # Create the pipeline using the trained modules and save it.
-    if not DIFFUSION_INFERENCE_ONLY:
-        accelerator.wait_for_everyone()
-        if accelerator.is_main_process:
-            unet = accelerator.unwrap_model(unet)
-            pipeline = StableDiffusionInstructPix2PixPipeline.from_pretrained(
-                DIFFUSION_MODEL,
-                text_encoder=accelerator.unwrap_model(text_encoder),
-                vae=accelerator.unwrap_model(vae),
-                unet=unet,
-                revision=DIFFUSION_MODEL_REVISION,
-                safety_checker=None,
-                requires_safety_checker=False,
-            )
-            pipeline.save_pretrained(DIFFUSION_OUTPUT_DIR)
 
     accelerator.end_training()
 
