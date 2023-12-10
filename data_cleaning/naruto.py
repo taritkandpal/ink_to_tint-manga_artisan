@@ -1,3 +1,7 @@
+"""
+One-time script for preparing Naruto manga images.
+"""
+
 import os
 from pathlib import Path
 from tqdm import tqdm
@@ -24,7 +28,7 @@ for naruto_folder in naruto_folders:
             if file not in fnames:
                 fnames[file] = []
             ip_file = volume / file
-            renamed_file = ''.join(
+            renamed_file = "".join(
                 file.split(".")[:-1] + [f"_{len(fnames[file])}"] + [".png"]
             )
             op_file = op_path / renamed_file
@@ -44,12 +48,19 @@ for ip_file, op_file in tqdm(files_list, desc="Processing Naruto files"):
         rgb_counter += 1
     if not manga_ar:
         manga_ar_counter += 1
-    if not rgb and manga_ar and wr_lb < white_ratio < wr_ub and br_lb < black_ratio < br_ub:
+    if (
+        not rgb
+        and manga_ar
+        and wr_lb < white_ratio < wr_ub
+        and br_lb < black_ratio < br_ub
+    ):
         image = io.imread(ip_file)
         image = resize_image(image)
         io.imsave(op_file, image)
         counter += 1
-print(f"{counter} images copied successfully. RGB count: {rgb_counter}. Manga Invalid AR count: {manga_ar_counter}")
+print(
+    f"{counter} images copied successfully. RGB count: {rgb_counter}. Manga Invalid AR count: {manga_ar_counter}"
+)
 
 # 100%|██████████| 68/68 [00:00<00:00, 2956.49it/s]
 # 100%|██████████| 63/63 [00:00<00:00, 2737.29it/s]

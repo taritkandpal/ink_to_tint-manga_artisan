@@ -1,3 +1,7 @@
+"""
+One-time script for preparing Jojo manga images.
+"""
+
 import gc
 import os
 import multiprocessing as mp
@@ -18,9 +22,7 @@ os.makedirs(op_path, exist_ok=True)
 wr_lb = 0.28386610477727037
 wr_ub = 0.5514879389194435
 
-jojo_folders = [
-    ip_path / dpath for dpath in os.listdir(ip_path)
-]
+jojo_folders = [ip_path / dpath for dpath in os.listdir(ip_path)]
 
 
 def find_files():
@@ -60,11 +62,7 @@ def process_file(ip_image_name):
             return 2
         if not manga_ar:
             return 3
-        if (
-            not rgb
-            and manga_ar
-            and wr_lb < white_ratio < wr_ub
-        ):
+        if not rgb and manga_ar and wr_lb < white_ratio < wr_ub:
             image = resize_image(image)
             io.imsave(op_path / ip_image_name, image)
             return 1

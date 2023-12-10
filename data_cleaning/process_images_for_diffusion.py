@@ -1,3 +1,7 @@
+"""
+One-time script for preparing dataset for diffusion.
+"""
+
 import os
 from pathlib import Path
 import random

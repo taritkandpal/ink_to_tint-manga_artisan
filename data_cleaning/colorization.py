@@ -1,3 +1,7 @@
+"""
+One-time script for preparing dataset for colorization.
+"""
+
 import os
 import multiprocessing as mp
 from pathlib import Path
@@ -83,10 +87,6 @@ if __name__ == "__main__":
                 desc="Processing coloured images",
             )
         )
-
-    # op = []
-    # for ip_image_name in tqdm(ip_image_names, desc="Processing coloured images"):
-    #     op.append(process_image(ip_image_name))
 
     print(f"{op.count(1)} images processed successfully. {op.count(0)} images failed.")
 

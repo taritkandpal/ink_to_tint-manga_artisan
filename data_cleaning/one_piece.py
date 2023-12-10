@@ -1,3 +1,7 @@
+"""
+One-time script for preparing OnePiece manga images.
+"""
+
 import os
 import multiprocessing as mp
 from pathlib import Path
@@ -79,16 +83,16 @@ def process_file(ip_image_name):
 
 if __name__ == "__main__":
     # pdf to images
-    # files_list = find_files()
-    # with mp.Pool(16) as p:
-    #     op = list(
-    #         tqdm(
-    #             p.imap_unordered(process_pdf, files_list),
-    #             total=len(files_list),
-    #             desc="Processing OnePiece PDFs",
-    #         )
-    #     )
-    # print(f"{op.count(1)} pdfs processed successfully. {op.count(0)} pdfs failed.")
+    files_list = find_files()
+    with mp.Pool(16) as p:
+        op = list(
+            tqdm(
+                p.imap_unordered(process_pdf, files_list),
+                total=len(files_list),
+                desc="Processing OnePiece PDFs",
+            )
+        )
+    print(f"{op.count(1)} pdfs processed successfully. {op.count(0)} pdfs failed.")
 
     # image processing
     unprocessed_files = os.listdir(int_path)
@@ -101,27 +105,6 @@ if __name__ == "__main__":
             )
         )
 
-    # n = len(unprocessed_files)
-    # fset1 = unprocessed_files[:int(n // 2)]
-    # with mp.Pool(12) as p:
-    #     op1 = list(
-    #         tqdm(
-    #             p.imap_unordered(process_file, fset1),
-    #             total=len(fset1),
-    #             desc="Processing OnePiece images (set1)",
-    #         )
-    #     )
-    # gc.collect()
-    # fset2 = unprocessed_files[int(n//2):]
-    # with mp.Pool(12) as p:
-    #     op2 = list(
-    #         tqdm(
-    #             p.imap_unordered(process_file, fset2),
-    #             total=len(fset2),
-    #             desc="Processing OnePiece images (set2)",
-    #         )
-    #     )
-    # op = op1 + op2
     print(
         f"{op.count(1)} images processed successfully. {op.count(0)} images failed. {op.count(2)} were rgb images. "
         f"{op.count(3)} were of incorrect aspect ratio. {op.count(4)} had invalid white/black ratios."

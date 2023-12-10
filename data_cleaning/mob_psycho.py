@@ -1,4 +1,7 @@
-import gc
+"""
+One-time script for preparing MobPsycho manga images.
+"""
+
 import os
 import multiprocessing as mp
 from pathlib import Path
@@ -30,7 +33,7 @@ def process_image(im_tup):
         return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     fset = []
     fnames = {}
     for root, dirs, files in os.walk(ip_path):
@@ -38,7 +41,9 @@ if __name__ == '__main__':
             if file.endswith((".jpg", ".jpeg", ".png")):
                 if file not in fnames:
                     fnames[file] = []
-                renamed_file = "".join(file.split(".")[:-1] + [f"_{len(fnames[file])}.png"])
+                renamed_file = "".join(
+                    file.split(".")[:-1] + [f"_{len(fnames[file])}.png"]
+                )
                 fset.append((os.path.join(root, file), renamed_file))
                 fnames[file].append(renamed_file)
 
@@ -56,6 +61,5 @@ if __name__ == '__main__':
     )
 
 # Processing mob_psycho images:  49%|████▉     | 1594/3255 [00:07<00:02, 629.54it/s]C:\Assignments\Computational_Imaging\project\data_cleaning\mob_psycho.py:29: UserWarning: C:\Assignments\Computational_Imaging\project\Datasets\StyleChange\Final\MobPsycho\img000004_11.png is a low contrast image
-#   io.imsave(op_path / op_image_name, image)
 # Processing mob_psycho images: 100%|██████████| 3255/3255 [00:11<00:00, 276.07it/s]
 # 1999 images processed successfully. 0 images failed. 1256 were rgb images or of incorrect aspect ratio.
