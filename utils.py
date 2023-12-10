@@ -1,10 +1,6 @@
-import os
-import multiprocessing as mp
 from pathlib import Path, WindowsPath
 import json
 
-import torch
-from torchvision.utils import save_image
 from skimage import io
 from PIL import Image
 import cv2
@@ -23,6 +19,16 @@ def ldict_to_jsonl(ldict, file_path):
         for data in ldict:
             jout = json.dumps(data) + "\n"
             out.write(jout)
+
+
+def read_jsonl(file_path):
+    """
+    Function to read jsonl file and return metadata.
+    """
+    with open(file_path, "r") as fh:
+        jsonl_content = fh.read()
+    metadata = [json.loads(jline) for jline in jsonl_content.splitlines()]
+    return metadata
 
 
 def check_rgb(image):
@@ -62,6 +68,22 @@ def pad_image(image, output_size, pad_value=0, ip_type="numpy"):
     return padded_array
 
 
+def pad_image_diffusion(image, output_size, pad_value=0, ip_type="numpy"):
+    """
+    Pad concatenated group of images evenly in all axes to get specific output size.
+    """
+    padded_arrays = []
+    for i in image:
+        padded_array = pad_image(i, output_size, pad_value, ip_type)
+        padded_arrays.append(
+            np.array(padded_array).reshape(
+                (1, DIFFUSION_INPUT_SIZE, DIFFUSION_INPUT_SIZE)
+            )
+        )
+    a = torch.cat([torch.from_numpy(x) for x in padded_arrays])
+    return a
+
+
 def resize_image(image, output_size=RESIZED_IMAGE_2D_DIM, antialiasing=True):
     """
     Resize image to specific output size.
@@ -82,6 +104,20 @@ def decolorize_image(image):
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     img_blend = 255 - cv2.dilate(255 - img_blend, kernel, iterations=1)
     return img_blend
+
+
+def remove_fourth_channel(data_path, output_path=None):
+    """
+    Function to remove 4th channel from png images.
+    """
+    if output_path is None:
+        output_path = data_path
+    files = os.listdir(data_path)
+    for file in tqdm(files):
+        image = io.imread(os.path.join(data_path, file))
+        if image.shape[2] > 3:
+            image = image[:, :, :3]
+            io.imsave(os.path.join(output_path, file), image)
 
 
 def image_filter_pixels(image_path, return_image=False):
@@ -144,6 +180,9 @@ def pdf_to_image(pdf_path, op_dir, image_base_name, zoom=4):
 
 
 def save_checkpoint(model, optimizer, filename):
+    """
+    Function to save checkpoint for GANs.
+    """
     print("**SAVING CHECKPOINT**")
     checkpoint = {
         "model": model.state_dict(),  # saves the models current weights and biases
@@ -153,61 +192,16 @@ def save_checkpoint(model, optimizer, filename):
 
 
 def load_checkpoint(checkpoint_file, model, optimizer=None, lr=None):
+    """
+    Function to load checkpoint for GANs.
+    """
     print("**LOADING CHECKPOINT**")
     checkpoint = torch.load(checkpoint_file, map_location=DEVICE)
-    model.load_state_dict(checkpoint[list(checkpoint.keys())[0]])  # checkpoint["model"])
+    model.load_state_dict(
+        checkpoint[list(checkpoint.keys())[0]]
+    )  # checkpoint["model"])
     if optimizer:
         optimizer.load_state_dict(checkpoint["optimizer"])
         if lr:
             for param_group in optimizer.param_groups:
                 param_group["lr"] = lr
-
-
-def remove_fourth_channel(data_path, output_path=None):
-    """
-    Function to remove 4th channel from png images.
-    """
-    if output_path is None:
-        output_path = data_path
-    files = os.listdir(data_path)
-    for file in tqdm(files):
-        image = io.imread(os.path.join(data_path, file))
-        if image.shape[2] > 3:
-            image = image[:, :, :3]
-            io.imsave(os.path.join(output_path, file), image)
-
-
-# remove_fourth_channel(r"C:\Assignments\Computational_Imaging\project\Datasets\Colorization\Final\coloured")
-
-
-# pdf_path = r"C:\Assignments\Computational_Imaging\project\Datasets\StyleChange\Raw\OnePiece\One Piece Manga-20231118T020251Z-001\One Piece Manga\1.pdf"
-# # pdf_path = r"C:\Assignments\Computational_Imaging\project\Datasets\StyleChange\Raw\Jojo\JJBA 1 Phantom Blood (Individual Volumes)\JJBA 1 - Phantom Blood 1.pdf"
-# op_dir = r"C:\Assignments\Computational_Imaging\project\data_cleaning\temp"
-# image_base_name = "1_{}.png"
-# pdf_to_image(pdf_path, op_dir, image_base_name)
-
-# white_ratios, black_ratios = find_iqr(
-#     r"C:\Assignments\Computational_Imaging\project\Datasets\StyleChange\Intermediate\Jojo"
-# )
-# pass
-# print("...")
-# np.quantile(white_ratios, 0.25)
-# Out[2]: 0.3133016585609178
-# np.quantile(white_ratios, 0.75)
-# Out[3]: 0.5324973950422128
-# np.quantile(white_ratios, 0.1)
-# Out[4]: 0.20450014064336366
-# np.quantile(white_ratios, 0.9)
-# Out[5]: 0.6037250433880459
-# np.quantile(white_ratios, 0.2)
-# Out[6]: 0.28386610477727037
-# np.quantile(white_ratios, 0.8)
-# Out[7]: 0.5514879389194435
-# np.quantile(white_ratios, 0.05)
-# Out[8]: 0.01527276854509261
-# np.quantile(white_ratios, 0.95)
-# Out[9]: 0.6516017816667318
-# np.quantile(white_ratios, 0.3)
-# Out[10]: 0.33884059061982574
-# np.quantile(white_ratios, 0.6)
-# Out[11]: 0.47359082479142167
