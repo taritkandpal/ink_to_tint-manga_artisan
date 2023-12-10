@@ -14,7 +14,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Script to fine-tune Stable Diffusion for InstructPix2Pix."""
+"""
+Script to fine-tune Stable Diffusion for InstructPix2Pix.
+Reference: https://github.com/ShivamShrirao/diffusers/blob/main/examples/instruct_pix2pix/train_instruct_pix2pix.py
+"""
 
 import logging
 import math
